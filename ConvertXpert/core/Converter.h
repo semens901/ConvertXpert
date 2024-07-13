@@ -10,15 +10,18 @@ namespace cxp
 {
     inline const uint16_t BMP_TYPE = 0x4D42;
     
+    /*
+        At the moment, it only supports files with 24 and 32 bits per pixel
+    */
     struct BMP
     {
 
         BMP(const char *fname);
-        BMP(int32_t width, int32_t height, bool has_alpha);
 
         void read(const char *fname);
         void write(const char *fname);
-        void fill_region(uint32_t x0, uint32_t y0, uint32_t w, uint32_t h, uint8_t B, uint8_t G, uint8_t R, uint8_t A);
+
+        void print_headers();
 
     private:
         #pragma pack(push, 1)
@@ -65,6 +68,13 @@ namespace cxp
         std::vector<uint8_t> data;
 
         int32_t row_stride;
+        std::ifstream reader;
+
+        void read_file_header();
+        void read_color_header(const char *fname);
+        void fill_data_negative();
+        void fill_data_positive();
+
         void write_headers(std::ofstream &of);
         void write_headers_and_data(std::ofstream &of);
         uint32_t make_stride_aligned(uint32_t align_stride);

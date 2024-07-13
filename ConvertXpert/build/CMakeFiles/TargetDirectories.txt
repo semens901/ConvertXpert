@@ -1,0 +1,7 @@
+/home/simon/Документы/GitHub/ConvertXpert/ConvertXpert/build/CMakeFiles/ConvertXpert.dir
+/home/simon/Документы/GitHub/ConvertXpert/ConvertXpert/build/CMakeFiles/edit_cache.dir
+/home/simon/Документы/GitHub/ConvertXpert/ConvertXpert/build/CMakeFiles/rebuild_cache.dir
+/home/simon/Документы/GitHub/ConvertXpert/ConvertXpert/build/CMakeFiles/list_install_components.dir
+/home/simon/Документы/GitHub/ConvertXpert/ConvertXpert/build/CMakeFiles/install.dir
+/home/simon/Документы/GitHub/ConvertXpert/ConvertXpert/build/CMakeFiles/install/local.dir
+/home/simon/Документы/GitHub/ConvertXpert/ConvertXpert/build/CMakeFiles/install/strip.dir
