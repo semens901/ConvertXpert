@@ -11,69 +11,17 @@ cxp::BMP::BMP(const char *fname)
     read(fname);
 }
 
-cxp::BMP::BMP(int32_t width, int32_t height, bool has_alpha = true)
-{
-    if (width <= 0 || height <= 0) 
-    {
-        throw std::runtime_error("The image width and height must be positive numbers.");
-    }
-
-    info_header.width = width;
-    info_header.height = height;
-    if (has_alpha) 
-    {
-        info_header.size = sizeof(BMPInfoHeader) + sizeof(BMPColorHeader);
-        file_header.offset_data = sizeof(BMPFileHeader) + sizeof(BMPInfoHeader) + sizeof(BMPColorHeader);
-
-        info_header.bit_count = 32;
-        info_header.compression = 3;
-        row_stride = width * 4;
-        data.resize(row_stride * height);
-        file_header.file_size = file_header.offset_data + data.size();
-    }
-    else 
-    {
-        info_header.size = sizeof(BMPInfoHeader);
-        file_header.offset_data = sizeof(BMPFileHeader) + sizeof(BMPInfoHeader);
-
-        info_header.bit_count = 24;
-        info_header.compression = 0;
-        row_stride = width * 3;
-        data.resize(row_stride * height);
-
-        uint32_t new_stride = make_stride_aligned(4);
-        file_header.file_size = file_header.offset_data + data.size() + info_header.height * (new_stride - row_stride);
-    }
-}
-
-
 void cxp::BMP::read(const char *fname) 
 {
-    std::ifstream reader{ fname, std::ios_base::binary };
+    reader = std::ifstream{fname, std::ios_base::binary};
     if (reader) 
     {
-        reader.read((char*)&file_header, sizeof(file_header));
-        if(file_header.file_type != BMP_TYPE) 
-        {
-            throw std::runtime_error("Error! Unrecognized file format.");
-        }
-        reader.read((char*)&info_header, sizeof(info_header));
+        read_file_header();
 
         // The BMPColorHeader is used only for transparent images
         if(info_header.bit_count == 32) 
         {
-            // Check if the file has bit mask color information
-            if(info_header.size >= (sizeof(BMPInfoHeader) + sizeof(BMPColorHeader))) 
-            {
-                reader.read((char*)&color_header, sizeof(color_header));
-                // Check if the pixel data is stored as BGRA and if the color space type is sRGB
-                check_color_header(color_header);
-            } 
-            else 
-            {
-                std::cerr << "Warning! The file \"" << fname << "\" does not seem to contain bit mask information\n";
-                throw std::runtime_error("Error! Unrecognized file format.");
-            }
+            read_color_header(fname);
         }
 
         // Jump to the pixel data location
@@ -95,33 +43,102 @@ void cxp::BMP::read(const char *fname)
 
         if (info_header.height < 0) 
         {
-            throw std::runtime_error("The program can treat only BMP images with the origin in the bottom left corner!");
+            data.resize(info_header.width * (info_header.height * -1) * info_header.bit_count / 8);
+
+            // Here we check if we need to take into account row padding
+            fill_data_negative();
+
+            return;
+            //throw std::runtime_error("The program can treat only BMP images with the origin in the bottom left corner!");
         }
 
         data.resize(info_header.width * info_header.height * info_header.bit_count / 8);
 
         // Here we check if we need to take into account row padding
-        if (info_header.width % 4 == 0) 
-        {
-            reader.read((char*)data.data(), data.size());
-            file_header.file_size += data.size();
-        }
-        else 
-        {
-            row_stride = info_header.width * info_header.bit_count / 8;
-            uint32_t new_stride = make_stride_aligned(4);
-            std::vector<uint8_t> padding_row(new_stride - row_stride);
-
-            for (int y = 0; y < info_header.height; ++y) 
-            {
-                reader.read((char*)(data.data() + row_stride * y), row_stride);
-                reader.read((char*)padding_row.data(), padding_row.size());
-            }
-            file_header.file_size += data.size() + info_header.height * padding_row.size();
-        }
+        fill_data_positive();
     }
     else {
         throw std::runtime_error("Unable to open the input image file.");
+    }
+}
+
+// file header read
+void cxp::BMP::read_file_header()
+{
+    reader.read((char*)&file_header, sizeof(file_header));
+    if(file_header.file_type != BMP_TYPE) 
+    {
+        throw std::runtime_error("Error! Unrecognized file format.");
+    }
+    reader.read((char*)&info_header, sizeof(info_header));
+}
+
+void cxp::BMP::read_color_header(const char *fname)
+{
+    // Check if the file has bit mask color information
+    if(info_header.size >= (sizeof(BMPInfoHeader) + sizeof(BMPColorHeader))) 
+    {
+        reader.read((char*)&color_header, sizeof(color_header));
+        // Check if the pixel data is stored as BGRA and if the color space type is sRGB
+        check_color_header(color_header);
+    } 
+    else 
+    {
+        std::cerr << "Warning! The file \"" << fname << "\" does not seem to contain bit mask information\n";
+        throw std::runtime_error("Error! Unrecognized file format.");
+    }
+}
+
+/*
+If the info_header.height parameter is negative,
+then the beginning of the drawing starts from the upper left corner. 
+In this feature, we only populate if required.
+*/
+void cxp::BMP::fill_data_negative()
+{
+    if (info_header.width % 4 == 0) 
+    {
+        reader.read((char*)data.data(), data.size());
+        file_header.file_size += data.size();
+    }
+    else 
+    {
+        row_stride = info_header.width * info_header.bit_count / 8;
+        uint32_t new_stride = make_stride_aligned(4);
+        std::vector<uint8_t> padding_row(new_stride - row_stride);
+
+        for (int y = info_header.height; y < 0; ++y) 
+        {
+            reader.read((char*)(data.data() + row_stride * y), row_stride);
+            reader.read((char*)padding_row.data(), padding_row.size());
+        }
+        file_header.file_size += data.size() + (info_header.height * -1) * padding_row.size();
+    }
+}
+/*
+If the info_header.height parameter is positive, 
+then the beginning of the drawing starts from the lower left corner. 
+In this feature, we only populate if required
+*/
+void cxp::BMP::fill_data_positive()
+{
+    if (info_header.width % 4 == 0) 
+    {
+        reader.read((char*)data.data(), data.size());
+        file_header.file_size += data.size();
+    }
+    else 
+    {
+        row_stride = info_header.width * info_header.bit_count / 8;
+        uint32_t new_stride = make_stride_aligned(4);
+        std::vector<uint8_t> padding_row(new_stride - row_stride);
+
+        for (int y = 0; y < info_header.height; ++y) 
+        {
+            reader.read((char*)(data.data() + row_stride * y), row_stride);
+            reader.read((char*)padding_row.data(), padding_row.size());
+        }
+        file_header.file_size += data.size() + info_header.height * padding_row.size();
     }
 }
 
@@ -163,8 +180,17 @@ void cxp::BMP::write(const char *fname)
                 std::vector<uint8_t> padding_row(new_stride - row_stride);
 
                 write_headers(of);
-
-                for (int y = 0; y < info_header.height; ++y) {
+                if(info_header.height < 0)
+                {
+                    for (int y = info_header.height; y < 0; ++y) 
+                    {
+                        of.write((const char*)(data.data() + row_stride * y), row_stride);
+                        of.write((const char*)padding_row.data(), padding_row.size());
+                    }
+                    return;
+                }
+                for (int y = 0; y < info_header.height; ++y) 
+                {
                     of.write((const char*)(data.data() + row_stride * y), row_stride);
                     of.write((const char*)padding_row.data(), padding_row.size());
                 }
@@ -207,21 +233,13 @@ uint32_t cxp::BMP::make_stride_aligned(uint32_t align_stride)
     return new_stride;
 }
 
-void cxp::BMP::fill_region(uint32_t x0, uint32_t y0, uint32_t w, uint32_t h, uint8_t B, uint8_t G, uint8_t R, uint8_t A) 
+void cxp::BMP::print_headers()
 {
-    if (x0 + w > (uint32_t)info_header.width || y0 + h > (uint32_t)info_header.height) {
-        throw std::runtime_error("The region does not fit in the image!");
-    }
+    std::cout << "fileheader:\n" << 
+    "file_size:\t" << file_header.file_size << "\n" << 
+    "file_type:\t" << file_header.file_type << "\n" <<
+    "file_data:\t" << file_header.offset_data << "\n" <<
+    "reserved1:\t" << file_header.reserved1 << "\n" <<
+    "reserved2:\t" << file_header.reserved2 << std::endl;
 
-    uint32_t channels = info_header.bit_count / 8;
-    for (uint32_t y = y0; y < y0 + h; ++y) {
-        for (uint32_t x = x0; x < x0 + w; ++x) {
-            data[channels * (y * info_header.width + x) + 0] = B;
-            data[channels * (y * info_header.width + x) + 1] = G;
-            data[channels * (y * info_header.width + x) + 2] = R;
-            if (channels == 4) {
-                data[channels * (y * info_header.width + x) + 3] = A;
-            }
-        }
-    }
 }
